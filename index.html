@@ -525,6 +525,45 @@ footer{border-top:1px solid var(--line);margin-top:52px;padding:22px 0 0;color:v
   border-radius:50% 50% 50% 0;transform:rotate(-45deg);
   background:var(--p1);border:2.5px solid #fff;box-sizing:border-box;box-shadow:0 2px 7px rgba(0,0,0,.45)
 }
+
+/* ---------- 拍照记录渔获 ---------- */
+.photo-pick{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.photo-pick .hint{font-size:12.5px;color:var(--dim)}
+.photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:9px}
+.photo-thumb{position:relative;aspect-ratio:1/1;border-radius:11px;overflow:hidden;border:1px solid var(--line);background:var(--bg2);cursor:pointer}
+.photo-thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.photo-thumb .rm{
+  position:absolute;top:4px;right:4px;width:21px;height:21px;border-radius:50%;border:0;padding:0;
+  background:rgba(10,11,15,.66);color:#fff;font-size:13px;line-height:21px;cursor:pointer;
+  display:grid;place-items:center;transition:.15s
+}
+.photo-thumb .rm:hover{background:rgba(248,113,113,.9)}
+.photo-thumb .idx{position:absolute;left:4px;bottom:4px;font-size:10px;padding:1px 6px;border-radius:999px;background:rgba(10,11,15,.6);color:#fff}
+/* 渔获墙（相册） */
+.wall{margin-top:18px}
+.wall-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:10px}
+.wall-ph{position:relative;aspect-ratio:1/1;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:var(--bg2);cursor:pointer;transition:.2s}
+.wall-ph:hover{border-color:rgba(167,139,250,.5);transform:translateY(-2px);box-shadow:0 10px 24px -12px rgba(0,0,0,.6)}
+.wall-ph img{width:100%;height:100%;object-fit:cover;display:block}
+.wall-ph .cap{position:absolute;left:0;right:0;bottom:0;padding:14px 8px 6px;font-size:11px;color:#fff;background:linear-gradient(transparent,rgba(10,11,15,.82));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 大图灯箱 */
+.lightbox{position:fixed;inset:0;z-index:300;background:rgba(8,9,12,.94);display:none;flex-direction:column;align-items:center;justify-content:center;padding:env(safe-area-inset-top) 12px calc(12px + env(safe-area-inset-bottom))}
+.lightbox.on{display:flex}
+.lightbox img{max-width:100%;max-height:80vh;border-radius:10px;box-shadow:0 18px 50px -16px rgba(0,0,0,.8)}
+.lightbox .lb-bar{position:absolute;top:0;left:0;right:0;display:flex;align-items:center;justify-content:space-between;padding:14px 16px;color:var(--text);font-size:13px}
+.lightbox .lb-bar .lb-close{background:rgba(255,255,255,.1);border:0;color:#fff;width:36px;height:36px;border-radius:50%;font-size:18px;cursor:pointer}
+.lightbox .lb-nav{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:44px;border-radius:50%;border:0;background:rgba(255,255,255,.12);color:#fff;font-size:22px;cursor:pointer;display:grid;place-items:center}
+.lightbox .lb-nav.prev{left:14px}
+.lightbox .lb-nav.next{right:14px}
+.lightbox .lb-cap{position:absolute;bottom:18px;left:0;right:0;text-align:center;color:var(--muted);font-size:12px;padding:0 24px}
+.lightbox .lb-count{position:absolute;bottom:46px;left:0;right:0;text-align:center;color:var(--text);font-size:13px;font-variant-numeric:tabular-nums}
+
+/* 鱼获识别 */
+.vrow{margin:15px 0}
+.vtip{margin-top:6px;line-height:1.5}
+.btn[disabled]{opacity:.45;cursor:not-allowed;filter:none;transform:none}
+.btn[disabled]:hover{transform:none}
+.rec-on{color:var(--p1)}
 </style>
 </head>
 <body data-page-node-id="f08e9Aov6X2ScmybW8mPGX">
@@ -830,6 +869,14 @@ footer{border-top:1px solid var(--line);margin-top:52px;padding:22px 0 0;color:v
 
     <div class="grid g4" id="statBox" style="margin-bottom:20px" data-page-node-id="GfXDP4cbfo4KE5FeSnhNAM"></div>
 
+    <div class="card wall" id="wallCard" style="margin-bottom:20px">
+      <div class="block-hd" style="margin:0 0 12px">
+        <h3 class="block-t">渔获墙</h3>
+        <span class="small muted" id="wallCount"></span>
+      </div>
+      <div class="wall-grid" id="wallGrid"></div>
+    </div>
+
     <div class="card" data-page-node-id="TQNeWsfF2lYIZRmM6gzDMI">
       <b style="font-size:14px" data-page-node-id="HFSogbe6b2CqpAxh1SkQg8">新增记录</b>
       <div class="hr" data-page-node-id="LrHq2rcPL5nVQgCmqkn9Sh"></div>
@@ -864,6 +911,16 @@ footer{border-top:1px solid var(--line);margin-top:52px;padding:22px 0 0;color:v
         <div style="grid-column:1/-1" data-page-node-id="FCkLahMLZnK9SikGravHd2">
           <label class="fl" data-page-node-id="9a1zu2AsS1jieonZ2CBSAv">备注（天气、饵料、漂相、教训…）</label>
           <textarea id="l-note" placeholder="例：气压 1015、东北风 2 级；拉饵奶香、调四钓二；下午 4 点后连口 8 尾"></textarea>
+        </div>
+        <div style="grid-column:1/-1">
+          <label class="fl">渔获照片（拍照或选图，可多张）</label>
+          <div class="photo-pick">
+            <button type="button" class="btn ghost sm" id="logCam">📷 拍照 / 选图</button>
+            <button type="button" class="btn ghost sm" id="recFish" disabled>🤖 识别鱼获</button>
+            <input id="logPhoto" type="file" accept="image/*" capture="environment" multiple hidden>
+            <span class="hint" id="photoMsg">手机点此直接调用相机；电脑可批量选图。拍好后点「🤖 识别鱼获」自动识别鱼种 / 尾数 / 重量（已内置免费模型，无需设置）。</span>
+          </div>
+          <div class="photo-grid" id="photoGrid"></div>
         </div>
       </div>
       <div class="flex mt2" data-page-node-id="5pI6HQ2o19PTKrufkRDrqI">
@@ -1023,6 +1080,16 @@ footer{border-top:1px solid var(--line);margin-top:52px;padding:22px 0 0;color:v
   </div>
   <div id="searchHits" data-page-node-id="YmfdzBAxxSAcWEKzNSfKbd"></div>
 </div></div>
+
+<!-- 渔获大图灯箱（放在脚本前，确保脚本绑定时元素已存在） -->
+<div class="lightbox" id="lightbox">
+  <div class="lb-bar"><span id="lbTitle"></span><button class="lb-close" id="lbClose" aria-label="关闭">✕</button></div>
+  <button class="lb-nav prev" id="lbPrev" aria-label="上一张">‹</button>
+  <img id="lbImg" alt="渔获照片" src="">
+  <button class="lb-nav next" id="lbNext" aria-label="下一张">›</button>
+  <div class="lb-count" id="lbCount"></div>
+  <div class="lb-cap" id="lbCap"></div>
+</div>
 
 <script>
 "use strict";
@@ -1384,12 +1451,12 @@ const GEAR = [
 
 const TABS = [
   {id:"index",t:"出钓指数",icon:'<path d="M3 17l6-6 4 4 8-8"/><path d="M21 7v5h-5"/>'},
+  {id:"log",t:"渔获日志",icon:'<path d="M6 3h12v18H6z"/><path d="M9 8h6M9 12h6M9 16h4"/>'},
+  {id:"map",t:"钓点地图",icon:'<path d="M12 2C8 2 5 5 5 9c0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7z"/><circle cx="12" cy="9" r="2.4"/>'},
   {id:"fish",t:"鱼种图鉴",icon:'<path d="M3 12c2.5-4 6-6 9-6 3.6 0 6.6 2.4 9 6-2.4 3.6-5.4 6-9 6-3 0-6.5-2-9-6z"/><circle cx="16" cy="11" r="1"/>'},
   {id:"method",t:"钓法教学",icon:'<path d="M12 3v18"/><path d="M5 8l7-5 7 5"/><path d="M5 8v8l7 5 7-5V8"/>'},
   {id:"bait",t:"饵料配方",icon:'<circle cx="12" cy="12" r="8"/><path d="M12 8v8M8 12h8"/>'},
   {id:"gear",t:"装备清单",icon:'<path d="M4 7h16v12H4z"/><path d="M9 7V5h6v2"/>'},
-  {id:"log",t:"渔获日志",icon:'<path d="M6 3h12v18H6z"/><path d="M9 8h6M9 12h6M9 16h4"/>'},
-  {id:"map",t:"钓点地图",icon:'<path d="M12 2C8 2 5 5 5 9c0 5 7 13 7 13s7-8 7-13c0-4-3-7-7-7z"/><circle cx="12" cy="9" r="2.4"/>'},
   {id:"rules",t:"安全守则",icon:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>'}
 ];
 
@@ -2085,8 +2152,14 @@ renderGear();
    日志
    ============================================================ */
 const LKEY = "fish.logs.v1";
+const PHKEY = "fish.photos.v1";            // { [ts]: [ {full, w, h}, ... ] }
 let logs = store.get(LKEY, []);
+let photosDB = store.get(PHKEY, {});
 function saveLogs(){ store.set(LKEY, logs); }
+function savePhotosDB(){
+  try { localStorage.setItem(PHKEY, JSON.stringify(photosDB)); return true; }
+  catch(e){ return false; }
+}
 let logLat = null, logLng = null;   // 日志表单定位按钮暂存的钓点坐标
 function renderLogs(){
   const cnt = logs.length;
@@ -2109,10 +2182,14 @@ function renderLogs(){
   if (!cnt){
     $("#logTableWrap").innerHTML = `<div class="empty">还没有记录。钓完回来花 30 秒记一笔，一个月后你会感谢自己。</div>`;
     tableHint($("#logTableWrap"));
+    renderWall();
     return;
   }
   const rows = logs.slice().reverse().map((x, i) => {
     const idx = logs.length - 1 - i;
+    const ph = (x.photos && x.photos.length)
+      ? `<div style="display:flex;gap:5px;flex-wrap:wrap">${photoCell(x)}</div>`
+      : "—";
     return `<tr>
       <td>${esc(x.date || "")}</td>
       <td>${x.lat != null ? `<a class="lk" href="javascript:void(0)" data-spot="${x.lat},${x.lng}">${esc(x.spot || "📍 钓点")}</a>` : esc(x.spot || "—")}</td>
@@ -2120,21 +2197,28 @@ function renderLogs(){
       <td>${esc(x.fish || "—")}</td>
       <td>${esc(x.count ?? 0)}</td>
       <td>${(+x.max || 0).toFixed(2)}</td>
+      <td>${ph}</td>
       <td style="max-width:280px;white-space:normal;color:var(--muted)">${esc(x.note || "")}</td>
       <td><button class="del" data-i="${idx}">删除</button></td>
     </tr>`;
   }).join("");
   $("#logTableWrap").innerHTML = `<table>
-    <thead><tr><th>日期</th><th>钓点</th><th>时长(h)</th><th>主要鱼种</th><th>尾数</th><th>最大(kg)</th><th>备注</th><th></th></tr></thead>
+    <thead><tr><th>日期</th><th>钓点</th><th>时长(h)</th><th>主要鱼种</th><th>尾数</th><th>最大(kg)</th><th>渔获</th><th>备注</th><th></th></tr></thead>
     <tbody>${rows}</tbody></table>`;
   $$("#logTableWrap .del").forEach(b => b.onclick = () => {
-    logs.splice(+b.dataset.i, 1); saveLogs(); renderLogs();
+    const i = +b.dataset.i;
+    if (logs[i] && logs[i].ts != null) { delete photosDB[logs[i].ts]; savePhotosDB(); }
+    logs.splice(i, 1); saveLogs(); renderLogs();
   });
   $$("#logTableWrap .lk").forEach(a => a.onclick = () => {
     const c = a.dataset.spot.split(",").map(Number);
     go("map"); focusSpot(c[0], c[1]);
   });
+  $$("#logTableWrap .photo-thumb[data-ts]").forEach(el => el.onclick = () => {
+    openLightbox(+el.dataset.ts, +el.dataset.k);
+  });
   tableHint($("#logTableWrap"));
+  renderWall();
 }
 $("#logAdd").onclick = () => {
   const date = $("#l-date").value || new Date().toISOString().slice(0, 10);
@@ -2147,23 +2231,36 @@ $("#logAdd").onclick = () => {
     max: +$("#l-max").value || 0,
     note: $("#l-note").value.trim(),
     lat: logLat, lng: logLng,
-    ts: Date.now()
+    ts: Date.now(),
+    photos: []
   };
-  if (!rec.spot && !rec.fish && !rec.count){
-    $("#logMsg").textContent = "至少填一个钓点或鱼种再保存。"; return;
+  if (!rec.spot && !rec.fish && !rec.count && !draftPhotos.length){
+    $("#logMsg").textContent = "至少填一个钓点或鱼种，或拍张照片再保存。"; return;
+  }
+  /* 先把照片落库，再写主记录：避免主记录引用了不存在的图片而打不开 */
+  if (draftPhotos.length){
+    photosDB[rec.ts] = draftPhotos.map(p => ({ full: p.full, w: p.w, h: p.h }));
+    if (!savePhotosDB()){
+      delete photosDB[rec.ts];
+      $("#logMsg").textContent = "本机存储空间不足，照片无法保存。请删除部分旧记录或照片后再试。";
+      return;
+    }
+    rec.photos = draftPhotos.map(p => ({ thumb: p.thumb, w: p.w, h: p.h }));
   }
   logs.push(rec); saveLogs(); renderLogs();
   ["l-spot","l-fish","l-note"].forEach(id => $("#" + id).value = "");
   $("#l-count").value = 0; $("#l-max").value = 0; $("#l-hours").value = 4;
   logLat = logLng = null;
   $("#l-loc").classList.remove("on", "busy");
-  $("#logMsg").textContent = "已保存到本机。" + (rec.lat != null ? "（已记录钓点坐标）" : "");
-  setTimeout(() => $("#logMsg").textContent = "", 2400);
+  draftPhotos = []; renderDraftPhotos();
+  $("#photoMsg").textContent = "手机点此直接调用相机；电脑可批量选图。";
+  $("#logMsg").textContent = "已保存到本机。" + (rec.lat != null ? "（已记录钓点坐标）" : "") + (rec.photos.length ? "（含 " + rec.photos.length + " 张照片）" : "");
+  setTimeout(() => $("#logMsg").textContent = "", 2600);
 };
 $("#logClear").onclick = () => {
   if (!logs.length) return;
-  if (confirm("确定清空全部 " + logs.length + " 条记录？此操作不可恢复。")){
-    logs = []; saveLogs(); renderLogs();
+  if (confirm("确定清空全部 " + logs.length + " 条记录？此操作不可恢复（含所有渔获照片）。")){
+    logs = []; photosDB = {}; saveLogs(); savePhotosDB(); renderLogs();
   }
 };
 /* 钓点输入框旁的 📍：一键用当前位置命名钓点，并把坐标一并记下（保存后表格里可点开地图）。
@@ -2194,6 +2291,254 @@ $("#l-loc").onclick = () => {
 };
 $("#l-date").value = new Date().toISOString().slice(0, 10);
 renderLogs();
+
+/* ============================================================
+   拍照记录渔获
+   ============================================================ */
+/* 图片处理：尊重 EXIF 方向（createImageBitmap 的 imageOrientation），
+   原图压缩到最大边 1280px / JPEG 0.72，另生成 240px 缩略图用于列表与渔获墙。 */
+function loadBitmap(file){
+  if (window.createImageBitmap){
+    try { return window.createImageBitmap(file, { imageOrientation: "from-image" }); } catch(e){}
+  }
+  return new Promise((res, rej) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => { URL.revokeObjectURL(url); res(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error("decode")); };
+    img.src = url;
+  });
+}
+function drawScaled(src, maxDim, quality){
+  let w = src.width || src.videoWidth || 1, h = src.height || src.videoHeight || 1;
+  const scale = Math.min(1, maxDim / Math.max(w, h));
+  w = Math.max(1, Math.round(w * scale));
+  h = Math.max(1, Math.round(h * scale));
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  c.getContext("2d").drawImage(src, 0, 0, w, h);
+  return { dataURL: c.toDataURL("image/jpeg", quality), w, h };
+}
+async function processPhoto(file){
+  const src = await loadBitmap(file);
+  const full = drawScaled(src, 1280, 0.72);
+  const thumb = drawScaled(src, 240, 0.6);
+  if (src.close) { try { src.close(); } catch(e){} }
+  return { full: full.dataURL, thumb: thumb.dataURL, w: full.w, h: full.h };
+}
+
+/* 表单草稿照片：添加前先存在内存，保存时随记录写入照片库 */
+let draftPhotos = [];
+function renderDraftPhotos(){
+  const grid = $("#photoGrid");
+  const rb = $("#recFish");
+  if (rb) rb.disabled = !draftPhotos.length;
+  if (!draftPhotos.length){ grid.innerHTML = ""; return; }
+  grid.innerHTML = draftPhotos.map((p, i) =>
+    `<div class="photo-thumb"><img src="${p.thumb}" alt="草稿照片"><button class="rm" data-i="${i}" aria-label="移除">✕</button></div>`
+  ).join("");
+  $$("#photoGrid .rm").forEach(b => b.onclick = () => {
+    draftPhotos.splice(+b.dataset.i, 1); renderDraftPhotos();
+  });
+}
+$("#logCam").onclick = () => $("#logPhoto").click();
+$("#logPhoto").onchange = async () => {
+  const files = Array.from($("#logPhoto").files || []);
+  $("#logPhoto").value = "";
+  if (!files.length) return;
+  const msg = $("#photoMsg");
+  msg.textContent = "正在处理 " + files.length + " 张…";
+  let added = 0;
+  for (const f of files){
+    if (!f.type || !f.type.startsWith("image/")) continue;
+    try { draftPhotos.push(await processPhoto(f)); added++; }
+    catch(e){}
+  }
+  renderDraftPhotos();
+  if (added){
+    msg.textContent = "已添加 " + added + " 张" + (draftPhotos.length ? "（待保存共 " + draftPhotos.length + " 张）" : "") + "。";
+  } else {
+    msg.textContent = "图片读取失败，请重试或换一张。";
+  }
+  setTimeout(() => {
+    if (msg.textContent.indexOf("已添加") === 0 || msg.textContent.indexOf("图片读取") === 0)
+      msg.textContent = "手机点此直接调用相机；电脑可批量选图。";
+  }, 3200);
+};
+
+/* 表格里的渔获缩略图（最多 3 张 + 余量角标） */
+function photoCell(x){
+  const n = x.photos.length;
+  const shown = x.photos.slice(0, 3).map((p, k) =>
+    `<div class="photo-thumb" data-ts="${x.ts}" data-k="${k}" style="width:46px"><img src="${p.thumb}" alt=""></div>`
+  ).join("");
+  const more = n > 3 ? `<span class="photo-thumb" data-ts="${x.ts}" data-k="0" style="width:46px;display:grid;place-items:center;background:var(--card2);color:var(--muted);font-size:12px">+${n-3}</span>` : "";
+  return shown + more;
+}
+
+/* 渔获墙（全部照片的相册） */
+function renderWall(){
+  const wall = [];
+  logs.forEach(x => (x.photos || []).forEach((p, k) => wall.push({ ts: x.ts, k, thumb: p.thumb, date: x.date, fish: x.fish })));
+  const grid = $("#wallGrid"), cnt = $("#wallCount");
+  cnt.textContent = wall.length ? (wall.length + " 张照片 · 点击看大图") : "";
+  if (!wall.length){
+    grid.innerHTML = `<div class="empty" style="grid-column:1/-1;padding:30px 10px">还没有渔获照片。钓上鱼后点「📷 拍照 / 选图」记录下精彩瞬间吧。</div>`;
+    return;
+  }
+  grid.innerHTML = wall.map(w =>
+    `<div class="wall-ph" data-ts="${w.ts}" data-k="${w.k}"><img src="${w.thumb}" alt=""><div class="cap">${esc(w.date || "")}${w.fish ? " · " + esc(w.fish) : ""}</div></div>`
+  ).join("");
+  $$("#wallGrid .wall-ph").forEach(el => el.onclick = () => openLightbox(+el.dataset.ts, +el.dataset.k));
+}
+
+/* ============================================================
+   拍照自动识别鱼种 / 尾数 / 最大单尾（多模态大模型 API）
+   【安全版】API Key 已不在前端：前端只请求同源的 /api/vision，
+   由服务器 nginx 反代到智谱接口，并在服务端注入 Authorization，
+   因此浏览器源码里看不到 Key，公网部署也安全。
+   模型：智谱 GLM-4V-Flash（免费视觉模型，经 /api/vision 反代）。
+   ============================================================ */
+const VISION_API_KEY = "";   // 安全版：Key 已不在前端，由服务器 nginx 反代 /api/vision 注入
+
+const VISION_MAIN = {
+  name: "智谱 GLM-4V-Flash（免费）",
+  endpoint: "/api/vision",
+  model: "glm-4v-flash",
+  key: VISION_API_KEY
+};
+/* 安全版：统一走同源 /api/vision 反代（Key 在服务器 nginx 注入，前端不含 Key） */
+function activeVision(){
+  return { name:"智谱 GLM-4V-Flash（免费·服务端代理）", endpoint:"/api/vision", model:"glm-4v-flash" };
+}
+
+/* 归一化鱼种：模型常回「未知 / 无法确定 / unknown」等，需判空 */
+function cleanSpecies(s){
+  if (!s || typeof s !== "string") return "";
+  const t = s.trim();
+  if (!t) return "";
+  const low = t.toLowerCase();
+  if (/(未知|无法|不确定|看不清|不清楚|没看|未识别|未能|识别不出|分辨不出|unknown|uncertain|unclear|n\/a|none|null|\?)/.test(low)) return "";
+  return t;
+}
+
+/* 生成识别结果提示：区分「认出鱼种 / 只认出数量重量 / 啥都没认出」三档，给出优雅文案 */
+function buildRecMsg(o){
+  const sp = cleanSpecies(o.species);
+  const cnt = (o.count != null && !isNaN(+o.count)) ? Math.max(0, Math.round(+o.count)) : 0;
+  const wgt = (o.maxWeightKg != null && !isNaN(+o.maxWeightKg)) ? Math.max(0, +o.maxWeightKg) : 0;
+  const eng = o.engine || "免费模型";
+  const conf = o.confidence || "?";
+  if (sp){
+    let s = "🐟 已识别：" + sp;
+    if (cnt) s += " ×" + cnt;
+    if (wgt) s += "，最大 " + wgt.toFixed(2) + "kg";
+    s += "（" + eng + " · 把握：" + conf + "，请核对）";
+    if (o.note) s += " · " + o.note;
+    return s;
+  }
+  if (cnt || wgt){
+    let s = "🤔 识别到 " + (cnt ? cnt + " 尾" : "") + (cnt && wgt ? " / " : "") + (wgt ? wgt.toFixed(2) + "kg" : "")
+      + "，但没认出具体鱼种";
+    s += "（" + eng + " · 把握：" + conf + "）";
+    s += " —— 麻烦你手动补个鱼种～";
+    if (o.note) s += " " + o.note;
+    return s;
+  }
+  return "📷 这张照片没识别出明确的鱼获。换个角度、让鱼更完整清晰、背景干净点，旁边放只手或尺子当参照，再拍一张试试；也可以直接在表单里手动填。";
+}
+
+/* 调用视觉模型：返回 {species,count,maxWeightKg,confidence,note} */
+async function recognizeFish(b64){
+  const p = activeVision();
+  const model = p.model;
+  const sys = "你是钓鱼助手。用户发一张渔获照片，请识别：1) 鱼种 species（常见名，如鲫鱼/鲤鱼/翘嘴/罗非，多鱼种用顿号分隔）；"
+    + "2) 尾数 count（整数，数不清就尽量估并在 note 说明）；3) 最大单尾重量 maxWeightKg（kg，数字，需参照照片里的手/尺/鱼钳估算，无法判断写 0）。"
+    + "只输出 JSON，不要其它任何文字，格式：{\"species\":\"\",\"count\":0,\"maxWeightKg\":0,\"confidence\":\"高/中/低\",\"note\":\"\"}。";
+  const body = {
+    model,
+    messages:[
+      { role:"system", content:sys },
+      { role:"user", content:[
+        { type:"text", text:"请识别这张渔获照片的鱼种、尾数和最大单尾重量。" },
+        { type:"image_url", image_url:{ url:"data:image/jpeg;base64," + b64 } }
+      ]}
+    ]
+  };
+  let r;
+  try {
+    r = await fetch(p.endpoint, {
+      method:"POST",
+      headers: p.key ? { "Content-Type":"application/json", "Authorization":"Bearer " + p.key } : { "Content-Type":"application/json" },
+      body: JSON.stringify(body)
+    });
+  } catch(e){
+    throw new Error("网络请求失败（多半是跨域 CORS 限制）。建议把本页用本地服务器或部署后访问，避免用 file:// 直接打开。");
+  }
+  if (!r.ok){
+    let t = "";
+    try { const j = await r.json(); t = (j.error && j.error.message) || JSON.stringify(j); } catch(e){ try { t = await r.text(); } catch(_){} }
+    throw new Error("API 返回 " + r.status + "：" + String(t).slice(0, 160));
+  }
+  const j = await r.json();
+  const content = (j.choices && j.choices[0] && j.choices[0].message && j.choices[0].message.content) || "";
+  const m = content.match(/\{[\s\S]*\}/);
+  if (!m) throw new Error("模型未返回可解析的 JSON：" + content.slice(0, 160));
+  let o;
+  try { o = JSON.parse(m[0]); } catch(e){ throw new Error("JSON 解析失败：" + m[0].slice(0, 120)); }
+  o.engine = p.name;
+  return o;
+}
+
+$("#recFish").onclick = async () => {
+  if (!draftPhotos.length){ $("#photoMsg").textContent = "先拍一张或选一张照片再识别。"; return; }
+  const btn = $("#recFish"), msg = $("#photoMsg");
+  const b64 = draftPhotos[0].full.replace(/^data:image\/\w+;base64,/, "");
+  btn.disabled = true;
+  msg.innerHTML = '<span class="rec-on">🤖 识别中…</span>';
+  try {
+    const o = await recognizeFish(b64);
+    const sp = cleanSpecies(o.species);
+    const cnt = (o.count != null && !isNaN(+o.count)) ? Math.max(0, Math.round(+o.count)) : 0;
+    const wgt = (o.maxWeightKg != null && !isNaN(+o.maxWeightKg)) ? Math.max(0, +o.maxWeightKg) : 0;
+    if (sp) $("#l-fish").value = sp;
+    if (cnt) $("#l-count").value = cnt;
+    if (wgt) $("#l-max").value = wgt.toFixed(2);
+    msg.textContent = buildRecMsg(o);
+  } catch(e){
+    msg.textContent = "识别失败：" + e.message;
+  } finally {
+    btn.disabled = !draftPhotos.length;
+  }
+};
+
+/* 大图灯箱：支持左右切换、点遮罩 / Esc 关闭、方向键翻页 */
+let lbList = [], lbIdx = 0;
+function openLightbox(ts, k){
+  const arr = photosDB[ts] || [];
+  if (!arr.length) return;
+  lbList = arr; lbIdx = k || 0;
+  showLb();
+  $("#lightbox").classList.add("on");
+}
+function showLb(){
+  const p = lbList[lbIdx];
+  $("#lbImg").src = p.full;
+  $("#lbCount").textContent = (lbIdx + 1) + " / " + lbList.length;
+  $("#lbPrev").style.display = lbList.length > 1 ? "" : "none";
+  $("#lbNext").style.display = lbList.length > 1 ? "" : "none";
+}
+$("#lbClose").onclick = () => $("#lightbox").classList.remove("on");
+$("#lbPrev").onclick = () => { if (!lbList.length) return; lbIdx = (lbIdx - 1 + lbList.length) % lbList.length; showLb(); };
+$("#lbNext").onclick = () => { if (!lbList.length) return; lbIdx = (lbIdx + 1) % lbList.length; showLb(); };
+$("#lightbox").addEventListener("click", e => { if (e.target === $("#lightbox")) $("#lightbox").classList.remove("on"); });
+document.addEventListener("keydown", e => {
+  if (!$("#lightbox").classList.contains("on")) return;
+  if (e.key === "Escape") $("#lightbox").classList.remove("on");
+  else if (e.key === "ArrowLeft") $("#lbPrev").click();
+  else if (e.key === "ArrowRight") $("#lbNext").click();
+});
+renderDraftPhotos();
 
 /* ============================================================
    搜索
