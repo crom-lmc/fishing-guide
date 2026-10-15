@@ -103,8 +103,8 @@ $("#logAdd").onclick = () => {
   $("#l-count").value = 0; $("#l-max").value = 0; $("#l-hours").value = 4;
   logLat = logLng = null;
   $("#l-loc").classList.remove("on", "busy");
-  draftPhotos = []; renderDraftPhotos();
-  $("#photoMsg").textContent = "手机点此直接调用相机；电脑可批量选图。";
+  draftPhotos = []; recFilled = null; renderDraftPhotos();
+  $("#photoMsg").textContent = PHOTO_HINT;
   $("#logMsg").textContent = "已保存到本机。" + (rec.lat != null ? "（已记录钓点坐标）" : "") + (rec.photos.length ? "（含 " + rec.photos.length + " 张照片）" : "");
   setTimeout(() => $("#logMsg").textContent = "", 2600);
 };
@@ -178,8 +178,20 @@ async function processPhoto(file){
   return { full: full.dataURL, thumb: thumb.dataURL, w: full.w, h: full.h };
 }
 
-/* 表单草稿照片：添加前先存在内存，保存时随记录写入照片库 */
+/* 表单草稿照片：一次只支持一张；重新拍照自动替换。
+   保存时随记录写入照片库。 */
 let draftPhotos = [];
+/* AI 识别往表单里填过的值（快照）。删照片 / 换照片时，把仍然等于 AI 填入值的
+   字段清回默认；用户后来手动改过的值不动。 */
+let recFilled = null;
+function clearRecFields(){
+  if (!recFilled) return;
+  if (recFilled.fish  != null && $("#l-fish").value  === recFilled.fish)  $("#l-fish").value  = "";
+  if (recFilled.count != null && $("#l-count").value === recFilled.count) $("#l-count").value = 0;
+  if (recFilled.max   != null && $("#l-max").value   === recFilled.max)   $("#l-max").value   = 0;
+  recFilled = null;
+}
+const PHOTO_HINT = "手机点此直接调用相机；电脑选图即可，重新拍照会自动替换当前照片。";
 function renderDraftPhotos(){
   const grid = $("#photoGrid");
   const rb = $("#recFish");
@@ -189,31 +201,41 @@ function renderDraftPhotos(){
     `<div class="photo-thumb"><img src="${p.thumb}" alt="草稿照片"><button class="rm" data-i="${i}" aria-label="移除">✕</button></div>`
   ).join("");
   $$("#photoGrid .rm").forEach(b => b.onclick = () => {
-    draftPhotos.splice(+b.dataset.i, 1); renderDraftPhotos();
+    draftPhotos = [];          /* 单张：直接清空 */
+    clearRecFields();          /* 识别填充的数据一并清掉 */
+    renderDraftPhotos();
+    const msg = $("#photoMsg");
+    msg.textContent = "已移除照片，识别填充的鱼种 / 尾数 / 重量已清空。";
+    setTimeout(() => { if (msg.textContent.indexOf("已移除") === 0) msg.textContent = PHOTO_HINT; }, 3200);
   });
 }
 $("#logCam").onclick = () => $("#logPhoto").click();
 $("#logPhoto").onchange = async () => {
-  const files = Array.from($("#logPhoto").files || []);
+  const f = ($("#logPhoto").files || [])[0];
   $("#logPhoto").value = "";
-  if (!files.length) return;
+  if (!f) return;
   const msg = $("#photoMsg");
-  msg.textContent = "正在处理 " + files.length + " 张…";
-  let added = 0;
-  for (const f of files){
-    if (!f.type || !f.type.startsWith("image/")) continue;
-    try { draftPhotos.push(await processPhoto(f)); added++; }
-    catch(e){}
+  if (!f.type || !f.type.startsWith("image/")){
+    msg.textContent = "这不是图片文件，请重选。";
+    return;
   }
-  renderDraftPhotos();
-  if (added){
-    msg.textContent = "已添加 " + added + " 张" + (draftPhotos.length ? "（待保存共 " + draftPhotos.length + " 张）" : "") + "。";
-  } else {
+  msg.textContent = "正在处理照片…";
+  let p;
+  try { p = await processPhoto(f); }
+  catch(e){
     msg.textContent = "图片读取失败，请重试或换一张。";
+    return;
   }
+  const hadPrev = draftPhotos.length > 0;
+  if (hadPrev) clearRecFields();   /* 旧识别结果对应旧照片，一并作废 */
+  draftPhotos = [p];
+  renderDraftPhotos();
+  msg.textContent = hadPrev
+    ? "已替换为新照片，原照片与识别结果已清空，请重新识别。"
+    : "已添加照片，点「🤖 识别鱼获」自动识别鱼种 / 尾数 / 重量。";
   setTimeout(() => {
-    if (msg.textContent.indexOf("已添加") === 0 || msg.textContent.indexOf("图片读取") === 0)
-      msg.textContent = "手机点此直接调用相机；电脑可批量选图。";
+    const t = msg.textContent;
+    if (t.indexOf("已替换") === 0 || t.indexOf("已添加") === 0) msg.textContent = PHOTO_HINT;
   }, 3200);
 };
 
@@ -355,6 +377,12 @@ $("#recFish").onclick = async () => {
     if (sp) $("#l-fish").value = sp;
     if (cnt) $("#l-count").value = cnt;
     if (wgt) $("#l-max").value = wgt.toFixed(2);
+    /* 快照：删照片时只清「仍等于 AI 填入值」的字段，用户手改过的保留 */
+    recFilled = {
+      fish:  sp   ? sp             : null,
+      count: cnt  ? String(cnt)    : null,
+      max:   wgt  ? wgt.toFixed(2) : null
+    };
     msg.textContent = buildRecMsg(o);
   } catch(e){
     msg.textContent = "识别失败：" + e.message;
