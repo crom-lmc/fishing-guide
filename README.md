@@ -31,7 +31,7 @@
 
 ## 🛠 技术栈
 
-- 纯 HTML + 内联 CSS + 原生 JavaScript，**无任何第三方依赖、无构建步骤**
+- 纯 HTML + 独立 CSS + 原生 JavaScript，**无任何第三方依赖、无构建步骤**
 - 数据存储：`localStorage`
 - 图片处理：浏览器端 `createImageBitmap` 校正 EXIF 方向，压缩后存为 1280px 原图 + 240px 缩略图（JPEG）
 - 视觉识别：OpenAI 兼容 `/chat/completions` 接口（默认智谱 GLM-4V-Flash，免费视觉模型）
@@ -69,9 +69,22 @@ location = /api/vision {
 
 ```
 fishing-guide/
-├── index.html   # 单文件应用（全部逻辑、样式、数据）
+├── index.html        # 入口：HTML 结构 + 按顺序加载 css / js
+├── styles.css        # 全部样式（原内联 <style> 抽离）
+├── js/
+│   ├── data.js       # 数据常量：鱼种 / 钓法 / 饵料 / 装备 / 标签 / 导航
+│   ├── core.js       # 基础：DOM 工具 / 导航切换 / 搜索开关 / 繁简转换
+│   ├── score.js      # 出钓指数评分 + 逆地理编码 + 天气 + 季节时段
+│   ├── content.js    # 内容渲染：鱼种图鉴 / 钓法 / 饵料 / 装备清单
+│   ├── log.js        # 渔获日志 + 拍照识别 + 渔获墙 / 灯箱
+│   ├── search.js     # 全站搜索
+│   ├── map.js        # 钓点地图（Leaflet）+ 附近水域 + 我的位置
+│   ├── share.js      # 钓点分享：二维码生成 + 链接解析
+│   └── init.js       # 初始化收尾
 └── README.md
 ```
+
+> 纯前端、零依赖、无构建步骤。脚本以经典 `<script>` 顺序加载，可直接双击 `index.html`（`file://`）打开使用，无需本地服务器。
 
 ## 📝 数据存储
 
