@@ -546,6 +546,64 @@ function riverList(els, la, lo, r){
 
 function fmtDist(m){ return m < 950 ? Math.max(10, Math.round(m / 10) * 10) + " m" : (m / 1000).toFixed(m < 9500 ? 1 : 0) + " km"; }
 
+/* ============================================================
+   驾车可达性：直线距离看着近、开车可能要绕半小时，所以再补一个真实路况距离。
+   走高德 v3 direction/driving（Key 在 nginx 注入）；结果按「起点|终点」缓存 7 天，
+   每次最多算前 10 个、并发 3，避免打爆接口配额。
+   坐标注意：起点永远是浏览器定位的 WGS-84；水域点也是 WGS-84（要转），
+   而钓点咨询的 POI 本身就是 GCJ-02（不能再转）。
+   ============================================================ */
+const RTKEY = "fish.route.v2", RT_TTL = 7 * 24 * 3600 * 1000;
+const RT_MAX = 10, RT_CONC = 3;
+function fmtMin(m){
+  if (m < 60) return m + " 分钟";
+  const h = Math.floor(m / 60), r = m % 60;
+  return h + " 小时" + (r ? " " + r + " 分" : "");
+}
+async function routeOne(oLa, oLo, dLat, dLng, destGcj){
+  const cache = store.get(RTKEY, {});
+  const k = oLa.toFixed(3) + "," + oLo.toFixed(3) + "|" + dLat.toFixed(4) + "," + dLng.toFixed(4);
+  const hit = cache[k];
+  if (hit && (Date.now() - hit.ts) < RT_TTL) return hit;
+  const dest = destGcj ? (dLng.toFixed(6) + "," + dLat.toFixed(6)) : amapPos(dLat, dLng);
+  const res = await fetchT("api/route?origin=" + amapPos(oLa, oLo) + "&destination=" + dest
+    + "&extensions=base&output=json", 9000);
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const j = await res.json();
+  if (String(j.status) !== "1") throw new Error(j.info || "路径规划失败");
+  const p = ((j.route || {}).paths || [])[0];
+  if (!p || !p.distance) throw new Error("无可用路线");
+  const out = {ts:Date.now(), km:+p.distance / 1000, min:Math.round(+p.duration / 60)};
+  cache[k] = out; store.set(RTKEY, cache);
+  return out;
+}
+function setRtBadge(boxSel, k, txt, err){
+  $$(boxSel + ' [data-rt="' + k + '"]').forEach(el => {
+    el.textContent = txt;
+    if (err) el.classList.add("err");
+  });
+}
+/* 并发受限地批量补驾车信息；失败就退化为「直线距离」，不占版面报错 */
+async function fillRoutes(list, oLa, oLo, destGcj, boxSel){
+  if (!list || !list.length || oLa == null || oLo == null) return;
+  const n = Math.min(RT_MAX, list.length);
+  let i = 0;
+  const work = async () => {
+    while (i < n){
+      const k = i++;
+      const it = list[k]; if (!it) continue;
+      const dLat = it.pt ? it.pt.lat : it.lat, dLng = it.pt ? it.pt.lng : it.lng;
+      try{
+        const r = await routeOne(oLa, oLo, dLat, dLng, destGcj);
+        setRtBadge(boxSel, k, "🚗 " + fmtMin(r.min) + " · " + r.km.toFixed(1) + " km", false);
+      }catch(e){
+        setRtBadge(boxSel, k, "🚗 未取到", true);
+      }
+    }
+  };
+  await Promise.all(Array.from({length: Math.min(RT_CONC, n)}, work));
+}
+
 function riverEmpty(html){ return '<p class="empty">' + html + "</p>"; }
 
 function renderRivers(list, r, err){
@@ -579,7 +637,8 @@ function renderRivers(list, r, err){
       + '<div class="ri-main">'
       + '<div class="ri-nm"><span class="nm-txt">' + esc(x.name) + "</span>"
       + '<span class="tag ' + cls + '">' + x.kind + "</span></div>"
-      + '<div class="ri-meta">最近处直线约 ' + fmtDist(x.d) + " · " + x.pt.lat.toFixed(4) + "°N, " + x.pt.lng.toFixed(4) + "°E</div>"
+      + '<div class="ri-meta">最近处直线约 ' + fmtDist(x.d) + " · " + x.pt.lat.toFixed(4) + "°N, " + x.pt.lng.toFixed(4) + "°E"
+      + ' · <span class="rt" data-rt="' + i + '">🚗 测算中…</span></div>'
       + "</div>"
       + '<div class="ri-act">'
       + '<button type="button" data-river-go="' + i + '">地图看</button>'
@@ -602,6 +661,8 @@ function renderRivers(list, r, err){
     b.classList.add("on"); b.textContent = "已收藏";
   });
   drawRiverPts();
+  /* 列表出来后再异步补驾车距离（水域点是 WGS-84 → destGcj=false） */
+  fillRoutes(riverPts, lastGeo ? lastGeo.la : null, lastGeo ? lastGeo.lo : null, false, "#riverBox");
 }
 
 /* 把查到的水域点画到地图上（蓝色圆点，与钓点图钉区分） */
@@ -668,7 +729,7 @@ $$("#riverRadius .seg-btn").forEach(b => b.onclick = () => {
    复用出钓指数的「今天适钓指数」给每个钓点标注推荐度。
    数据来自高德开放平台（GCJ-02 坐标，与高德底图一致，无需转换）。
    ============================================================ */
-let amapLayer = null, amapSpots = [], amapBusy = false;
+let amapLayer = null, amapSpots = [], amapBusy = false, amapCenter = null;
 const AMAP_KW  = ["钓场", "钓鱼", "路亚", "垂钓", "野钓", "水库"];
 const AMAP_TTL = 6 * 3600 * 1000;
 const AMAP_CACHE = "fish.amap.v1";
@@ -775,6 +836,7 @@ function renderAmap(list, r, err){
       + '<span class="tag ' + cls + '">' + (x.managed ? "钓场" : "野钓点") + "</span>"
       + (rec ? '<span class="tag good">推荐</span>' : "") + "</div>"
       + '<div class="ri-meta">' + (x.addr ? esc(x.addr) + " · " : "") + "约 " + fmtDist(x.d)
+      + " · " + '<span class="rt" data-rt="' + i + '">🚗 测算中…</span>'
       + (amapBiz(x) ? " · " + esc(amapBiz(x)) : "") + "</div>"
       + "</div>"
       + '<div class="ri-act">'
@@ -789,6 +851,8 @@ function renderAmap(list, r, err){
     focusSpot(x.lat, x.lng);
   });
   drawAmapPts();
+  /* 钓点 POI 坐标本身是 GCJ-02 → destGcj=true，不能再转一次 */
+  fillRoutes(amapSpots, amapCenter ? amapCenter.la : null, amapCenter ? amapCenter.lo : null, true, "#amapBox");
 }
 
 /* 把钓点画到地图（橙色圆点，与水域蓝点、收藏图钉区分）；受 amapToggle 控制 */
@@ -812,6 +876,7 @@ function toggleAmapLayer(on){
 
 async function loadAmapSpots(la, lo, r, force){
   const box = $("#amapBox"); if (!box) return;
+  amapCenter = {la:la, lo:lo};   // 记下中心点，列表渲染后要用它算驾车距离
   const key = la.toFixed(3) + "," + lo.toFixed(3) + "," + r;
   const cache = store.get(AMAP_CACHE, {});
   const hit = cache[key];

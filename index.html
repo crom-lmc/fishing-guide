@@ -4,7 +4,7 @@
 <meta charset="UTF-8" data-page-node-id="pXoO0XOAk7kn6C2u1EWoRx">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" data-page-node-id="lAXY57fJC3P9LRIlWZg2F7">
 <title>钓鱼指南 · 从入门到上鱼</title>
-<link rel="stylesheet" href="styles.css?v=20261015d">
+<link rel="stylesheet" href="styles.css?v=20261015e">
 </head>
 <body data-page-node-id="f08e9Aov6X2ScmybW8mPGX">
 
@@ -165,6 +165,27 @@
         </div>
       </div>
       <div id="planBox" class="mt2" data-page-node-id="9lTlshGNiGEv8RkkSFMVkw"></div>
+    </div>
+
+    <div class="card mt2" id="hourCard" hidden>
+      <div class="block-hd">
+        <h3 class="block-t">逐时适钓 · 未来 24 小时</h3>
+        <span class="small muted" id="hourSum"></span>
+      </div>
+      <div class="hc-wrap">
+        <div class="hc-bars" id="hcBars"></div>
+        <svg class="hc-line" id="hcLine" viewBox="0 0 240 100" preserveAspectRatio="none"></svg>
+      </div>
+      <div class="hc-axis" id="hcAxis"></div>
+      <div class="hc-lg">
+        <span><i style="background:#34d399"></i>很好 ≥75</span>
+        <span><i style="background:#60a5fa"></i>不错 60–74</span>
+        <span><i style="background:#fbbf24"></i>一般 45–59</span>
+        <span><i style="background:#f87171"></i>差 &lt;45</span>
+        <span><i style="background:#c4b5fd"></i>气压曲线（右轴）</span>
+      </div>
+      <div class="hc-note" id="hcNote"></div>
+      <p class="river-attr">逐时预报 © Open-Meteo · 柱=该小时适钓指数（沿用上方季节与水域设置），紫线=气压走势；点柱子可把该小时参数填回上方。</p>
     </div>
 
     <h3 class="blk" data-page-node-id="jBg978X5r2mto7pKzOznKQ">为什么这几个因素最重要</h3>
@@ -547,14 +568,14 @@
   <div class="lb-cap" id="lbCap"></div>
 </div>
 
-<script src="js/data.js?v=20261015d"></script>
-<script src="js/core.js?v=20261015d"></script>
-<script src="js/score.js?v=20261015d"></script>
-<script src="js/content.js?v=20261015d"></script>
-<script src="js/log.js?v=20261015d"></script>
-<script src="js/search.js?v=20261015d"></script>
-<script src="js/map.js?v=20261015d"></script>
-<script src="js/share.js?v=20261015d"></script>
-<script src="js/init.js?v=20261015d"></script>
+<script src="js/data.js?v=20261015e"></script>
+<script src="js/core.js?v=20261015e"></script>
+<script src="js/score.js?v=20261015e"></script>
+<script src="js/content.js?v=20261015e"></script>
+<script src="js/log.js?v=20261015e"></script>
+<script src="js/search.js?v=20261015e"></script>
+<script src="js/map.js?v=20261015e"></script>
+<script src="js/share.js?v=20261015e"></script>
+<script src="js/init.js?v=20261015e"></script>
 </body>
 </html>
