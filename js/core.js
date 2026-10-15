@@ -146,3 +146,71 @@ function closeSearch(){
   document.body.style.overflow = "";
 }
 
+/* ============================================================
+   坐标系：WGS-84（浏览器 GPS / OSM） ↔ GCJ-02（高德底图 / 接口 / 分享链接）
+   国内两者相差 50–600m。以前所有坐标「拿来就用」：蓝点、水域点、搜钓点的
+   中心、uri.amap.com 分享链接全都偏了几百米。现在统一在「交给高德」的边界上
+   转换一次——内部仍按 WGS-84 保存真值（Overpass 查询要 WGS-84）。
+   ============================================================ */
+const GCJ_A = 6378245.0, GCJ_EE = 0.00669342162296594323;
+function _gcjLat(x, y){
+  let r = -100 + 2*x + 3*y + 0.2*y*y + 0.1*x*y + 0.2*Math.sqrt(Math.abs(x));
+  r += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI)) * 2/3;
+  r += (20*Math.sin(y*Math.PI) + 40*Math.sin(y/3*Math.PI)) * 2/3;
+  r += (160*Math.sin(y/12*Math.PI) + 320*Math.sin(y*Math.PI/30)) * 2/3;
+  return r;
+}
+function _gcjLng(x, y){
+  let r = 300 + x + 2*y + 0.1*x*x + 0.1*x*y + 0.1*Math.sqrt(Math.abs(x));
+  r += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI)) * 2/3;
+  r += (20*Math.sin(x*Math.PI) + 40*Math.sin(x/3*Math.PI)) * 2/3;
+  r += (150*Math.sin(x/12*Math.PI) + 300*Math.sin(x/30*Math.PI)) * 2/3;
+  return r;
+}
+/* 入参 WGS-84，出参 GCJ-02 */
+function wgs84ToGcj02(lng, lat){
+  let dLat = _gcjLat(lng - 105, lat - 35), dLng = _gcjLng(lng - 105, lat - 35);
+  const radLat = lat / 180 * Math.PI;
+  let magic = Math.sin(radLat); magic = 1 - GCJ_EE * magic * magic;
+  const sq = Math.sqrt(magic);
+  dLat = (dLat * 180) / ((GCJ_A * (1 - GCJ_EE)) / (magic * sq) * Math.PI);
+  dLng = (dLng * 180) / (GCJ_A / sq * Math.cos(radLat) * Math.PI);
+  return {lat: lat + dLat, lng: lng + dLng};
+}
+/* 画到高德底图上的 [lat, lng]（Leaflet 顺序） */
+function mapLatLng(lat, lng){
+  const g = wgs84ToGcj02(lng, lat);
+  return [g.lat, g.lng];
+}
+/* 给高德 REST / uri.amap.com 的 "lng,lat" 字符串 */
+function amapPos(lat, lng){
+  const g = wgs84ToGcj02(lng, lat);
+  return g.lng.toFixed(6) + "," + g.lat.toFixed(6);
+}
+/* GCJ-02 → WGS-84（迭代近似逆变换，3 轮收敛到毫米级，钓鱼场景绰绰有余）。
+   高德 POI（钓点/水域）都是 GCJ-02，进来先转回 WGS-84 存真值，
+   内部数据保持单一坐标系，交给高德时再经 amapPos/mapLatLng 转出去。 */
+function gcj02ToWgs84(lng, lat){
+  let wLng = lng, wLat = lat;
+  for (let i = 0; i < 3; i++){
+    const g = wgs84ToGcj02(wLng, wLat);
+    wLng -= g.lng - lng;
+    wLat -= g.lat - lat;
+  }
+  return {lat: wLat, lng: wLng};
+}
+
+/* 小屏：表格超出屏幕时给一句横向滑动提示（桌面端 CSS 自动隐藏）。
+   放 core.js 而不是 search.js：log.js 顶层渲染日志表时就要用它，
+   而加载顺序 core 先于 log，放后面文件会在首次渲染时报未定义。 */
+function tableHint(tw){
+  let h = tw.previousElementSibling;
+  if (!h || !h.classList || !h.classList.contains("tw-hint")){
+    h = document.createElement("div");
+    h.className = "tw-hint";
+    h.textContent = "← 左右滑动查看完整表格 →";
+    tw.parentNode.insertBefore(h, tw);
+  }
+  h.classList.toggle("ok", !!tw.querySelector("table"));
+}
+

@@ -6,6 +6,13 @@ const SKEY = "fish.spots.v1";
 let spots = store.get(SKEY, []);
 function saveSpots(){ store.set(SKEY, spots); }
 
+/* ------------------------------------------------------------
+   高德 POI 钓点咨询：搜附近收费钓场 / 野钓点 / 水库钓位。
+   Key 不落地前端：nginx 在服务端把 key 拼进高德请求（/api/amap 反代），
+   与智谱 AI 的 /api/vision 同一套思路；换 Key 只改 nginx 配置，前端无需动。
+   ------------------------------------------------------------ */
+const AMAP_API = "api/amap";   // 本站反代端点（相对路径，HTTPS / 8082 均可用）
+
 /* 瓦片源：高德（国内可达、中文标注）道路 + 卫星两种 */
 const TILES = {
   road: L => L.tileLayer("https://wprd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=7&x={x}&y={y}&z={z}", {subdomains:"1234", maxZoom:18, attribution:"© 高德地图"}),
@@ -60,6 +67,7 @@ function ensureMap(){
     });
     refreshMarkers();
     drawRiverPts();
+    drawAmapPts();
     if (locBest) setMyLoc(locBest.la, locBest.lo, locBest.acc);
     if (sharedPt) drawShared();          // 分享进来的钓点，地图重建后要补回去
     setTimeout(() => map.invalidateSize(), 80);
@@ -82,7 +90,8 @@ function refreshMarkers(){
   if (markerLayer){ markerLayer.remove(); markerLayer = null; }
   markerLayer = L.layerGroup().addTo(map);
   allSpots().forEach(p => {
-    const m = L.marker([p.lat, p.lng]).addTo(markerLayer);
+    /* 收藏/日志坐标是 WGS-84 真值，画到高德底图前转 GCJ-02 */
+    const m = L.marker(mapLatLng(p.lat, p.lng)).addTo(markerLayer);
     const html = "<b>" + esc(p.name) + "</b>"
       + "<div class=\"pop-row\">" + esc(p.meta || "") + "</div>"
       + "<div class=\"pop-act\">"
@@ -111,10 +120,12 @@ function closePopup(){ if (map) map.closePopup(); }
 function focusSpot(lat, lng){
   ensureMap();
   if (!map) return;
-  map.flyTo([lat, lng], 15, {duration:.6});
+  const t = mapLatLng(lat, lng);          // 底图是 GCJ-02，飞过去也要转换
+  map.flyTo(t, 15, {duration:.6});
   setTimeout(() => {
     if (!markerLayer) return;
-    const m = markerLayer.getLayers().find(x => Math.abs(x.getLatLng().lat - lat) < 1e-5 && Math.abs(x.getLatLng().lng - lng) < 1e-5);
+    /* 标记本身就是 GCJ-02，用转换后的目标值比对，否则永远匹配不上 */
+    const m = markerLayer.getLayers().find(x => Math.abs(x.getLatLng().lat - t[0]) < 1e-5 && Math.abs(x.getLatLng().lng - t[1]) < 1e-5);
     if (m) m.openPopup();
   }, 700);
 }
@@ -165,7 +176,7 @@ function myLocIcon(following){
 function myLocPopHtml(){
   if (!locBest) return "";
   const la = locBest.la, lo = locBest.lo;
-  const amap = "https://uri.amap.com/marker?position=" + lo.toFixed(6) + "," + la.toFixed(6)
+  const amap = "https://uri.amap.com/marker?position=" + amapPos(la, lo)
     + "&name=" + encodeURIComponent("我的位置");
   return "<b>我的位置</b>"
     + "<div class=\"pop-row\">纬度 " + la.toFixed(5) + "° · 经度 " + lo.toFixed(5) + "°</div>"
@@ -191,12 +202,14 @@ function legacyCopy(text, ok){
   ta.remove();
 }
 
+/* ⚠️ 存进 locBest 的仍是 WGS-84 真值（Overpass 查询要用），
+   但画到高德(GCJ-02)底图上必须先 mapLatLng() 转换，否则蓝点会偏 300–500m。 */
 function setMyLoc(la, lo, acc){
   if (!map || typeof L === "undefined") return;
   if (!myLocLayer) myLocLayer = L.layerGroup().addTo(map);
   locBest = {la:la, lo:lo, acc:acc || 0, t:new Date().toTimeString().slice(0, 5)};
   if (!myLocDot){
-    myLocDot = L.marker([la, lo], {icon:myLocIcon(locFollowing), zIndexOffset:900, keyboard:false}).addTo(myLocLayer);
+    myLocDot = L.marker(mapLatLng(la, lo), {icon:myLocIcon(locFollowing), zIndexOffset:900, keyboard:false}).addTo(myLocLayer);
     /* 传函数而不是字符串：每次打开都按最新的 locBest 现算内容 */
     myLocDot.bindPopup(myLocPopHtml);
     myLocDot.on("popupopen", () => {
@@ -210,15 +223,15 @@ function setMyLoc(la, lo, acc){
       if (rv) rv.onclick = () => { closePopup(); loadRivers(locBest.la, locBest.lo, riverR, true); };
     });
   } else {
-    myLocDot.setLatLng([la, lo]);
+    myLocDot.setLatLng(mapLatLng(la, lo));
     myLocDot.setIcon(myLocIcon(locFollowing));
   }
   const r = Math.max(acc || 0, 8);   // 精度圈太小时看不见，给个下限
   if (!myLocAcc){
-    myLocAcc = L.circle([la, lo], {radius:r, color:"#1a73e8", weight:1, opacity:.55,
+    myLocAcc = L.circle(mapLatLng(la, lo), {radius:r, color:"#1a73e8", weight:1, opacity:.55,
       fillColor:"#1a73e8", fillOpacity:.12, interactive:false}).addTo(myLocLayer);
   } else {
-    myLocAcc.setLatLng([la, lo]).setRadius(r);
+    myLocAcc.setLatLng(mapLatLng(la, lo)).setRadius(r);
   }
 }
 
@@ -312,7 +325,7 @@ function renderSpots(){
   }
   $("#spotCount").textContent = "共 " + spots.length + " 个";
   el.innerHTML = spots.map(s => {
-    const amap = "https://uri.amap.com/marker?position=" + s.lng.toFixed(6) + "," + s.lat.toFixed(6) + "&name=" + encodeURIComponent(s.name);
+    const amap = "https://uri.amap.com/marker?position=" + amapPos(s.lat, s.lng) + "&name=" + encodeURIComponent(s.name);
     return "<div class=\"card spot\">"
       + "<div class=\"nm\">📍 " + esc(s.name) + "</div>"
       + "<div class=\"meta\">" + s.lat.toFixed(4) + "°N, " + s.lng.toFixed(4) + "°E</div>"
@@ -346,7 +359,7 @@ function renderMapFallback(err){
     + (err ? "（" + esc(String(err.message || err)) + "）" : "")
     + "。网络恢复后刷新即可显示交互地图；下面是已记录的钓点坐标，可复制或在高德中打开：</p>";
   html += all.length ? all.map(p => {
-    const amap = "https://uri.amap.com/marker?position=" + p.lng.toFixed(6) + "," + p.lat.toFixed(6) + "&name=" + encodeURIComponent(p.name);
+    const amap = "https://uri.amap.com/marker?position=" + amapPos(p.lat, p.lng) + "&name=" + encodeURIComponent(p.name);
     return "<div class=\"fb-spot\"><span>" + esc(p.name) + "<br><span class=\"meta\">" + p.lat.toFixed(4) + "°N, " + p.lng.toFixed(4) + "°E</span></span>"
       + "<a href=\"" + amap + "\" target=\"_blank\" rel=\"noopener\">高德打开 ↗</a></div>";
   }).join("") : "<p style=\"margin:0\">暂无带坐标的钓点。去「渔获日志」记录时用 📍 定位，或联网后添加。</p>";
@@ -354,9 +367,11 @@ function renderMapFallback(err){
 }
 
 /* ============================================================
-   附近水域：河流 / 运河 / 水库 / 湖泊 / 海湾
-   数据来自 OpenStreetMap（Overpass API，免密钥、允许跨域）。
-   多个镜像按「上次可用」优先轮询，任何一次成功都会记住入口。
+   附近水域：河流 / 运河 / 水库 / 湖泊
+   主源：高德 POI 自然地名（河流 190204 / 湖泊 190205，水库归湖泊类）——
+         快、稳、中文地名全；GCJ-02 坐标进来先转回 WGS-84 存真值。
+   兜底：OpenStreetMap（Overpass API，免密钥、允许跨域），高德失败时启用，
+         多个镜像按「上次可用」优先并发竞速。
    ============================================================ */
 const RKEY    = "fish.rivers.v1";     // 结果缓存：{ "纬度,经度,半径": {ts, list} }
 const RKEY_EP = "fish.rivers.ep";     // 上次可用的镜像地址
@@ -367,7 +382,9 @@ const RIVER_EP = [
 ];
 const RIVER_TTL = 6 * 3600 * 1000;    // 同一位置 6 小时内不重复请求
 const RIVER_MAX = 20;                 // 最多列出多少处
+const AMAP_WATER_TYPES = "190204|190205";  // 高德自然地名：河流 | 湖泊（含水库）
 let riverR = 3000, riverBusy = false, riverPts = [], riverLayer = null, lastGeo = null;
+let riverSrc = "amap";                // 本次结果来源：amap | osm（渲染版权行/收藏备注用）
 
 /* 标签 → 中文类型；返回空字符串表示不值得列入（排水沟、喷泉之类） */
 function riverKind(t){
@@ -424,26 +441,83 @@ function nearestPt(el, la, lo){
   return best ? {pt:best, d:bd} : null;
 }
 
-/* 轮询镜像取原始数据。Overpass 主站忙时会在 ~10s 被网关掐断，
-   所以单个镜像的等待上限设 12s：等不到就换下一个，别让用户干等。 */
+/* 高德水域查询（主源）：自然地名下的 河流(190204) / 湖泊(190205)。
+   水库在高德也归「湖泊」类，按名字纠正回「水库」；渠系名字纠正为「运河」。
+   翻两页（25×2）保证 20 km 档也够用；同一条河常按河段拆成多条 POI，按名字去重留最近。
+   POI 坐标是 GCJ-02，统一转回 WGS-84 再进管线（与 Overpass 结果同构）。 */
+async function fetchRiversAmap(la, lo, r){
+  const g = wgs84ToGcj02(lo, la);
+  const c = g.lng.toFixed(6) + "," + g.lat.toFixed(6);
+  const pages = [1, 2].map(pg =>
+    fetchT(AMAP_API + "?location=" + c + "&types=" + AMAP_WATER_TYPES
+      + "&radius=" + Math.min(r, 50000) + "&offset=25&page=" + pg + "&output=json", 8000)
+      .then(async res => {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const j = await res.json();
+        if (String(j.status) !== "1") throw new Error(j.info || "高德水域查询失败");
+        return j.pois || [];
+      })
+  );
+  const rs = await Promise.allSettled(pages);
+  const ok = rs.filter(x => x.status === "fulfilled").map(x => x.value);
+  if (!ok.length){
+    const bad = rs.find(x => x.status === "rejected");
+    throw (bad && bad.reason) || new Error("高德水域查询失败");
+  }
+  const seen = {}, out = [];
+  ok.flat().forEach(p => {
+    const loc = amapLoc(p.location);
+    if (!isFinite(loc.lng) || !isFinite(loc.lat)) return;
+    const nm = simp(String(p.name || "").replace(/\s+/g, " ").trim());
+    if (!nm || nm.length > 30) return;
+    const w = gcj02ToWgs84(loc.lng, loc.lat);
+    let kind = String(p.typecode || "").indexOf("190205") === 0 ? "湖泊" : "河流";
+    if (kind === "湖泊" && nm.indexOf("水库") > -1) kind = "水库";
+    if (kind === "河流" && nm.indexOf("渠") > -1) kind = "运河";
+    const d = distM(la, lo, w.lat, w.lng);
+    if (d > r * 1.5) return;
+    if (seen[nm] != null){
+      const o = out[seen[nm]];
+      if (d < o.d){ o.d = d; o.pt = w; }
+      return;
+    }
+    seen[nm] = out.length;
+    out.push({name:nm, kind:kind, d:d, pt:w});
+  });
+  if (!out.length) throw new Error("高德范围内没有水域数据");
+  out.sort((a, b) => a.d - b.d);
+  return out.slice(0, RIVER_MAX);
+}
+
+/* 水域查询调度：高德优先（快、稳），Overpass 兜底。
+   两个源都直接返回归一化列表（WGS-84 坐标）。 */
 async function fetchRivers(la, lo, r){
+  try{
+    const list = await fetchRiversAmap(la, lo, r);
+    riverSrc = "amap";
+    return list;
+  }catch(eAmap){ /* 高德失败，落到 Overpass */ }
+  riverSrc = "osm";
   const q = riverQL(la, lo, r);
   const eps = RIVER_EP.slice();
   const last = store.get(RKEY_EP, "");
   const at = eps.indexOf(last);
   if (at > 0){ eps.splice(at, 1); eps.unshift(last); }
-  let err = null;
-  for (let i = 0; i < eps.length; i++){
-    try{
-      const res = await fetchT(eps[i] + "?data=" + encodeURIComponent(q), 12000);
+  const rs = await Promise.allSettled(eps.map(ep =>
+    fetchT(ep + "?data=" + encodeURIComponent(q), 12000).then(async res => {
       if (!res.ok) throw new Error("HTTP " + res.status);
       const j = await res.json();
       if (!j || !j.elements) throw new Error("返回格式异常");
-      store.set(RKEY_EP, eps[i]);
-      return j.elements;
-    }catch(e){ err = e; }
+      return {ep:ep, j:j};
+    })
+  ));
+  const hit = rs.find(x => x.status === "fulfilled" && x.value);
+  if (hit){
+    store.set(RKEY_EP, hit.value.ep);
+    return riverList(hit.value.j.elements, la, lo, r);
   }
-  throw err || new Error("接口不可用");
+  const e = rs.find(x => x.status === "rejected");
+  throw (e && e.reason) || new Error("接口不可用");
 }
 
 /* 归一化：去重、排序、截断 */
@@ -477,10 +551,16 @@ function riverEmpty(html){ return '<p class="empty">' + html + "</p>"; }
 function renderRivers(list, r, err){
   const box = $("#riverBox"); if (!box) return;
   const cnt = $("#riverCount");
+  const attr = $("#riverAttr");
+  if (attr) attr.textContent = riverSrc === "amap"
+    ? "水域数据 © 高德地图 · 距离为到该水域的直线距离，出钓前请自行确认该处是否允许垂钓"
+    : "水域数据 © OpenStreetMap 贡献者（ODbL）· 距离为到水域边界最近点的直线距离，出钓前请自行确认该处是否允许垂钓";
   riverPts = list || [];
   if (err){
     if (cnt) cnt.textContent = "";
-    box.innerHTML = riverEmpty("没取到数据（" + esc(String((err && err.message) || err)) + "）。<br>水域接口偶尔会拥堵，稍后再试即可；也可以先用上方地图自己找水面。");
+    const raw = String((err && err.message) || err);
+    const msg = /abort|timeout/i.test(raw) ? "查询超时，服务端繁忙" : raw;
+    box.innerHTML = riverEmpty("没取到数据（" + esc(msg) + "）。<br>大范围查询更容易超时，建议先用小半径（1–3 km）再逐步放大；也可以先用上方地图自己找水面。");
     drawRiverPts();
     return;
   }
@@ -492,7 +572,7 @@ function renderRivers(list, r, err){
   }
   if (cnt) cnt.textContent = "共 " + list.length + " 处";
   box.innerHTML = list.map((x, i) => {
-    const amap = "https://uri.amap.com/marker?position=" + x.pt.lng.toFixed(6) + "," + x.pt.lat.toFixed(6) + "&name=" + encodeURIComponent(x.name + "（" + x.kind + "）");
+    const amap = "https://uri.amap.com/marker?position=" + amapPos(x.pt.lat, x.pt.lng) + "&name=" + encodeURIComponent(x.name + "（" + x.kind + "）");
     const cls = x.kind === "水库" ? "b" : (x.kind === "湖泊" || x.kind === "池塘" ? "g" : (x.kind === "海域" || x.kind === "海湾" ? "w" : ""));
     const saved = spots.some(s => s.name === x.name && Math.abs(s.lat - x.pt.lat) < 1e-4);
     return '<div class="river">'
@@ -517,7 +597,7 @@ function renderRivers(list, r, err){
     const x = riverPts[+b.dataset.riverFav];
     if (!x) return;
     if (spots.some(s => s.name === x.name && Math.abs(s.lat - x.pt.lat) < 1e-4)) return;
-    spots.push({name:x.name, lat:x.pt.lat, lng:x.pt.lng, note:"附近水域（" + x.kind + "，约 " + fmtDist(x.d) + "）· OpenStreetMap", ts:Date.now()});
+    spots.push({name:x.name, lat:x.pt.lat, lng:x.pt.lng, note:"附近水域（" + x.kind + "，约 " + fmtDist(x.d) + "）· " + (riverSrc === "amap" ? "高德地图" : "OpenStreetMap"), ts:Date.now()});
     saveSpots(); refreshMarkers(); renderSpots();
     b.classList.add("on"); b.textContent = "已收藏";
   });
@@ -531,7 +611,8 @@ function drawRiverPts(){
   if (!riverPts.length) return;
   riverLayer = L.layerGroup().addTo(map);
   riverPts.forEach(x => {
-    L.circleMarker([x.pt.lat, x.pt.lng], {radius:5, color:"#60a5fa", weight:2, fillColor:"#60a5fa", fillOpacity:.45})
+    /* 两个源进来都已是 WGS-84 真值，画到高德底图前统一转 GCJ-02 */
+    L.circleMarker(mapLatLng(x.pt.lat, x.pt.lng), {radius:5, color:"#60a5fa", weight:2, fillColor:"#60a5fa", fillOpacity:.45})
       .addTo(riverLayer)
       .bindPopup("<b>" + esc(x.name) + '</b><div class="pop-row">' + x.kind + " · 最近处约 " + fmtDist(x.d) + "</div>");
   });
@@ -551,10 +632,9 @@ async function loadRivers(la, lo, r, force){
   if (riverBusy) return;
   riverBusy = true;
   if ($("#riverCount")) $("#riverCount").textContent = "";
-  box.innerHTML = riverEmpty('<span class="ri-busy"></span>正在查询 ' + Math.round(r / 1000) + " km 内的水域…<br>首次查询可能等几秒。");
+  box.innerHTML = riverEmpty('<span class="ri-busy"></span>正在查询 ' + Math.round(r / 1000) + " km 内的水域…");
   try{
-    const els = await fetchRivers(la, lo, r);
-    const list = riverList(els, la, lo, r);
+    const list = await fetchRivers(la, lo, r);
     cache[key] = {ts:Date.now(), list:list};
     store.set(RKEY, cache);
     renderRivers(list, r, null);
@@ -582,4 +662,188 @@ $$("#riverRadius .seg-btn").forEach(b => b.onclick = () => {
   riverR = +b.dataset.r;
   if (lastGeo) loadRivers(lastGeo.la, lastGeo.lo, riverR, false);
 });
+
+/* ============================================================
+   钓点咨询：高德 POI 搜附近收费钓场 / 野钓点 / 水库钓位
+   复用出钓指数的「今天适钓指数」给每个钓点标注推荐度。
+   数据来自高德开放平台（GCJ-02 坐标，与高德底图一致，无需转换）。
+   ============================================================ */
+let amapLayer = null, amapSpots = [], amapBusy = false;
+const AMAP_KW  = ["钓场", "钓鱼", "路亚", "垂钓", "野钓", "水库"];
+const AMAP_TTL = 6 * 3600 * 1000;
+const AMAP_CACHE = "fish.amap.v1";
+
+/* v3 REST 的 location 字段实测有三种形态："lng,lat" 字符串 / {lng,lat} 对象 / [] 空数组。
+   统一解析；解析不出坐标的返回 NaN，由后续 isFinite 过滤丢弃。 */
+function amapLoc(raw){
+  if (typeof raw === "string" && raw.includes(",")){
+    const p = raw.split(",");
+    return {lng:+p[0], lat:+p[1]};
+  }
+  if (raw && typeof raw === "object" && !Array.isArray(raw)){
+    return {lng:+raw.lng, lat:+raw.lat};
+  }
+  return {lng:NaN, lat:NaN};
+}
+
+/* 单关键词周边搜索：走本站 /api/amap 反代（key 由服务端注入）。
+   必须 extensions=all：默认 base 模式下地铁站/公交站类 POI 的 location 是空数组。
+   高德 v3 返回扁平结构：res.pois[]；address 可能是 []；biz_ext 带评分/人均/营业时间。 */
+async function amapOne(kw, c, r){
+  const u = AMAP_API + "?location=" + c.lng.toFixed(6) + "," + c.lat.toFixed(6)
+          + "&radius=" + Math.round(r) + "&offset=25&page=1&extensions=all&output=json"
+          + "&keywords=" + encodeURIComponent(kw);
+  const res = await fetchT(u, 9000);
+  if (!res.ok) throw new Error("HTTP " + res.status);
+  const j = await res.json();
+  if (String(j.status) !== "1") throw new Error(j.info || "高德接口返回异常");
+  return (j.pois || []).map(po => {
+    const loc = amapLoc(po.location), biz = po.biz_ext || {};
+    return {name:String(po.name||"").trim(),
+            addr:Array.isArray(po.address) ? "" : String(po.address||"").trim(),
+            lng:loc.lng, lat:loc.lat, type:String(po.type||""),
+            rating:String(biz.rating||"").trim(), cost:String(biz.cost||"").trim(),
+            open:String(biz.opentime2||"").trim()};
+  }).filter(x => x.name && isFinite(x.lng) && isFinite(x.lat));
+}
+
+/* 多关键词聚合 + 去重 + 距离 + 排序。
+   任一关键词成功即用其结果；全部失败才把错误抛给上层展示。 */
+async function searchAmap(la, lo, r){
+  /* 高德周边搜索的 location 只认 GCJ-02，浏览器 GPS 是 WGS-84 → 先转换，
+     否则会以偏了几百米的点为中心去搜 */
+  const g = wgs84ToGcj02(lo, la);
+  const c = {lat:g.lat, lng:g.lng};
+  const rs = await Promise.allSettled(AMAP_KW.map(kw => amapOne(kw, c, r)));
+  const ok = rs.filter(x => x.status === "fulfilled").map(x => x.value);
+  if (!ok.length){
+    const e = rs.find(x => x.status === "rejected");
+    throw new Error((e && e.reason && e.reason.message) || "高德接口不可用");
+  }
+  const all = []; ok.forEach(list => all.push(...list));
+  const seen = {}, out = [];
+  all.forEach(x => {
+    const d = distM(la, lo, x.lat, x.lng);
+    if (d > r * 1.6) return;
+    const k = x.name + "|" + x.lng.toFixed(4) + "," + x.lat.toFixed(4);
+    if (seen[k] != null) return;
+    seen[k] = out.length;
+    const managed = /钓场|垂钓|俱乐部|农庄|渔庄|度假|农家/.test(x.name + x.type);
+    out.push({name:x.name, addr:x.addr, lat:x.lat, lng:x.lng, type:x.type, d:d, managed:managed});
+  });
+  out.sort((a, b) => a.d - b.d);
+  return out.slice(0, 40);
+}
+
+function amapEmpty(html){ return '<p class="empty">' + html + "</p>"; }
+
+/* 高德附带的经营信息：评分 / 人均 / 营业时间，有啥显示啥 */
+function amapBiz(x){
+  const cost = parseFloat(x.cost);
+  return [x.rating && "⭐ " + x.rating,
+          isFinite(cost) && cost > 0 && "人均 ¥" + Math.round(cost),
+          x.open].filter(Boolean).join(" · ");
+}
+
+function renderAmap(list, r, err){
+  const box = $("#amapBox"); if (!box) return;
+  const cnt = $("#amapCount");
+  amapSpots = list || [];
+  if (err){
+    if (cnt) cnt.textContent = "";
+    box.innerHTML = amapEmpty("没取到数据（" + esc(String((err && err.message) || err)) + "）。<br>高德接口偶尔会限流，稍后再试；也可以先用上方地图自己找水面。");
+    drawAmapPts();
+    return;
+  }
+  if (!list.length){
+    if (cnt) cnt.textContent = "";
+    box.innerHTML = amapEmpty(Math.round(r/1000) + " km 范围内没找到带名字的钓场/野钓点。<br>把范围调大一档，或换个位置再查一次。");
+    drawAmapPts();
+    return;
+  }
+  const idx = currentScore();   // 区域适钓指数（今天），附近钓点共用
+  if (cnt) cnt.textContent = "共 " + list.length + " 处 · 今日适钓 " + idx.score;
+  const recN = Math.min(5, list.length);
+  box.innerHTML = list.map((x, i) => {
+    const rec = idx.score >= 68 && i < recN;
+    const cls = x.managed ? "b" : "g";
+    /* 高德返回的 POI 坐标本身就是 GCJ-02，此处**不要**再转 amapPos */
+    const amap = "https://uri.amap.com/marker?position=" + x.lng.toFixed(6) + "," + x.lat.toFixed(6) + "&name=" + encodeURIComponent(x.name);
+    return '<div class="river' + (rec ? " rec" : "") + '">'
+      + '<div class="ri-main">'
+      + '<div class="ri-nm"><span class="nm-txt">' + esc(x.name) + "</span>"
+      + '<span class="tag ' + cls + '">' + (x.managed ? "钓场" : "野钓点") + "</span>"
+      + (rec ? '<span class="tag good">推荐</span>' : "") + "</div>"
+      + '<div class="ri-meta">' + (x.addr ? esc(x.addr) + " · " : "") + "约 " + fmtDist(x.d)
+      + (amapBiz(x) ? " · " + esc(amapBiz(x)) : "") + "</div>"
+      + "</div>"
+      + '<div class="ri-act">'
+      + '<button type="button" data-amap-go="' + i + '">地图看</button>'
+      + '<a href="' + amap + '" target="_blank" rel="noopener">高德</a>'
+      + "</div></div>";
+  }).join("");
+  $$("#amapBox [data-amap-go]").forEach(b => b.onclick = () => {
+    const x = amapSpots[+b.dataset.amapGo];
+    if (!x) return;
+    go("map");
+    focusSpot(x.lat, x.lng);
+  });
+  drawAmapPts();
+}
+
+/* 把钓点画到地图（橙色圆点，与水域蓝点、收藏图钉区分）；受 amapToggle 控制 */
+function drawAmapPts(){
+  if (amapLayer){ amapLayer.remove(); amapLayer = null; }
+  if (!map || typeof L === "undefined" || !amapSpots.length) return;
+  if ($("#amapToggle") && !$("#amapToggle").checked) return;
+  amapLayer = L.layerGroup().addTo(map);
+  amapSpots.forEach(x => {
+    L.circleMarker([x.lat, x.lng], {radius:6, color:"#f59e0b", weight:2, fillColor:"#f59e0b", fillOpacity:.5})
+      .addTo(amapLayer)
+      .bindPopup("<b>" + esc(x.name) + '</b><div class="pop-row">' + (x.managed ? "收费/管理钓场" : "野钓点")
+        + " · 约 " + fmtDist(x.d) + "</div>" + (x.addr ? '<div class="pop-row">' + esc(x.addr) + "</div>" : "")
+        + (amapBiz(x) ? '<div class="pop-row">' + esc(amapBiz(x)) + "</div>" : ""));
+  });
+}
+function toggleAmapLayer(on){
+  if (!amapLayer || !map) return;
+  if (on) amapLayer.addTo(map); else map.removeLayer(amapLayer);
+}
+
+async function loadAmapSpots(la, lo, r, force){
+  const box = $("#amapBox"); if (!box) return;
+  const key = la.toFixed(3) + "," + lo.toFixed(3) + "," + r;
+  const cache = store.get(AMAP_CACHE, {});
+  const hit = cache[key];
+  if (!force && hit && (Date.now() - hit.ts) < AMAP_TTL){
+    renderAmap(hit.list || [], r, null);
+    return;
+  }
+  if (amapBusy) return;
+  amapBusy = true;
+  if ($("#amapCount")) $("#amapCount").textContent = "";
+  box.innerHTML = amapEmpty('<span class="ri-busy"></span>正在查询 ' + Math.round(r/1000) + " km 内的钓场…");
+  try{
+    const list = await searchAmap(la, lo, r);
+    cache[key] = {ts:Date.now(), list:list};
+    store.set(AMAP_CACHE, cache);
+    renderAmap(list, r, null);
+  }catch(e){
+    renderAmap([], r, e);
+  }finally{ amapBusy = false; }
+}
+
+/* 按钮：用「我的位置」或地图中心查附近钓点，复用附近水域的半径 riverR */
+$("#amapLoad").onclick = () => {
+  ensureMap();
+  const box = $("#amapBox"); if (!box) return;
+  let la, lo;
+  if (locBest){ la = locBest.la; lo = locBest.lo; }
+  else if (map){ const c = map.getCenter(); la = c.lat; lo = c.lng; }
+  else { box.innerHTML = amapEmpty("地图还没加载好，稍等一下再试。"); return; }
+  loadAmapSpots(la, lo, riverR, true);
+};
+
+/* 图层开关 */
+$("#amapToggle").onchange = e => { ensureMap(); toggleAmapLayer(e.target.checked); };
 

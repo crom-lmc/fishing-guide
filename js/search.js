@@ -61,16 +61,6 @@ function runSearch(){
   openSearch();
 }
 
-/* 小屏：表格超出屏幕时给一句横向滑动提示（桌面端 CSS 自动隐藏） */
-function tableHint(tw){
-  let h = tw.previousElementSibling;
-  if (!h || !h.classList || !h.classList.contains("tw-hint")){
-    h = document.createElement("div");
-    h.className = "tw-hint";
-    h.textContent = "← 左右滑动查看完整表格 →";
-    tw.parentNode.insertBefore(h, tw);
-  }
-  h.classList.toggle("ok", !!tw.querySelector("table"));
-}
+/* tableHint 已上移到 core.js（log.js 加载时就要用，必须先于 log.js 定义） */
 $$(".tw").forEach(tableHint);
 

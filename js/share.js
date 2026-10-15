@@ -270,7 +270,8 @@ function shareCopyText(s){
 }
 const inWeChat = () => /micromessenger/i.test(navigator.userAgent || "");
 function amapUrl(lat, lng, name){
-  return "https://uri.amap.com/marker?position=" + (+lng).toFixed(6) + "," + (+lat).toFixed(6)
+  /* uri.amap.com 用的是 GCJ-02，内部存的是 WGS-84，必须转换否则标记点偏几百米 */
+  return "https://uri.amap.com/marker?position=" + amapPos(lat, lng)
     + "&name=" + encodeURIComponent(name || "钓点");
 }
 
@@ -352,7 +353,7 @@ function drawShared(){
     html: '<div class="shared-pin"><i></i></div>',
     iconSize: [30, 30], iconAnchor: [15, 15], popupAnchor: [0, -16]
   });
-  const mk = L.marker([sharedPt.lat, sharedPt.lng], {icon: ic}).addTo(sharedLayer);
+  const mk = L.marker(mapLatLng(sharedPt.lat, sharedPt.lng), {icon: ic}).addTo(sharedLayer);
   mk.bindPopup("<b>" + esc(sharedPt.name) + "</b>"
     + "<div class=\"pop-row\">" + esc(sharedPt.note || "别人分享给你的钓点") + "</div>"
     + "<div class=\"pop-act\"><button id=\"sharedSave\">存为我的钓点</button>"
@@ -366,7 +367,7 @@ function drawShared(){
       sharedPt = null;
     };
   });
-  map.flyTo([sharedPt.lat, sharedPt.lng], 15, {duration: .6});
+  map.flyTo(mapLatLng(sharedPt.lat, sharedPt.lng), 15, {duration: .6});
   setTimeout(() => { try{ mk.openPopup(); }catch(e){} }, 700);
 }
 function openShared(){

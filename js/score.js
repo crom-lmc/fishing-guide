@@ -33,6 +33,40 @@ function presScoreFor(p){
   if (p >= 998) return .32;
   return .10;
 }
+/* 纯函数：给定一组出钓参数，返回 0–100 的适钓指数与硬止损标记。
+   与 DOM 解耦，供地图「钓点推荐」复用（同一区域天气相同，指数共用）。 */
+function calcScore(p){
+  const r = {
+    weather: RATING.weather[p.w],
+    temp:    tempScoreFor(p.t),
+    pres:    presScoreFor(p.p),
+    wind:    RATING.wind[p.wi],
+    dir:     RATING.dir[p.dr],
+    time:    RATING.time[p.tm],
+    season:  RATING.season[p.wt === "sea" ? "sea" : "fresh"][p.se]
+  };
+  let sum = 0;
+  Object.keys(WEIGHTS).forEach(k => sum += WEIGHTS[k] * r[k]);
+  const hardStop = (p.w === "thunder" || +p.wi >= 6);
+  let score = Math.round(sum * 100);
+  if (hardStop) score = Math.min(score, 22);
+  return {score, hardStop, r};
+}
+
+/* 读取出钓指数面板的当前输入，供地图侧直接取「今天的区域适钓指数」 */
+function currentScore(){
+  return calcScore({
+    w:  $("#i-weather").value,
+    t:  +$("#i-temp").value || 0,
+    p:  +$("#i-pres").value || 1010,
+    wi: $("#i-wind").value,
+    dr: $("#i-dir").value,
+    tm: $("#i-time").value,
+    se: +$("#i-season").value,
+    wt: $("#i-wtype").value
+  });
+}
+
 function compute(){
   const w  = $("#i-weather").value,
         t  = +$("#i-temp").value || 0,
@@ -43,22 +77,7 @@ function compute(){
         se = +$("#i-season").value,
         wt = $("#i-wtype").value;
 
-  const r = {
-    weather: RATING.weather[w],
-    temp:    tempScoreFor(t),
-    pres:    presScoreFor(p),
-    wind:    RATING.wind[wi],
-    dir:     RATING.dir[dr],
-    time:    RATING.time[tm],
-    season:  RATING.season[wt === "sea" ? "sea" : "fresh"][se]
-  };
-
-  let sum = 0;
-  Object.keys(WEIGHTS).forEach(k => sum += WEIGHTS[k] * r[k]);
-
-  const hardStop = (w === "thunder" || +wi >= 6);
-  let score = Math.round(sum * 100);
-  if (hardStop) score = Math.min(score, 22);
+  const {score, hardStop, r} = calcScore({w,t,p,wi,dr,tm,se,wt});
 
   const parts = [
     ["气压", r.pres], ["气温", r.temp], ["天气", r.weather], ["风力", r.wind],
@@ -202,7 +221,8 @@ async function fetchT(url, ms, headers){
   finally{ clearTimeout(timer); }
 }
 
-/* 源 1：Photon（OSM 数据、响应快，能到门牌号与附近地标）
+/* 兜底源：Photon（OSM 数据、响应快，能到门牌号与附近地标）
+   主源已换成高德 geoAmap，这里只在高德不可用时才走（见 revGeo）。
    注意：Photon 没有语言参数（官方 lang 只支持 de/en/fr/it，没有中文），
    它是**按请求头 Accept-Language 决定返回哪套名字**的。移动端 WebView 常发 en-US，
    同样的坐标就会变成「Minguang Road / Shaanxi Province / Xi'an」——所以必须显式要中文。
@@ -223,90 +243,47 @@ async function geoPhoton(la, lo){
     src: "OpenStreetMap"
   };
 }
-/* 源 2：Nominatim（同为 OSM，字段最标准；部分网络下不可达，仅作兜底） */
-async function geoNomi(la, lo){
-  const u = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${la}&lon=${lo}&zoom=18&addressdetails=1&accept-language=zh-CN`;
-  const r = await fetchT(u, 4000, {"Accept":"application/json", "Accept-Language":"zh-CN,zh;q=0.9"});
+/* （已移除）Nominatim 与 BigDataCloud 两个源：
+   Nominatim 国内常不可达（12s 超时），BigDataCloud 返回繁体需二次转换。
+   主源换成高德后它们已无存在价值，这里只留 Photon 一个 OSM 兜底。 */
+
+/* ============================================================
+   逆地理编码：坐标 → 中文地址
+   主力走高德（本站 /api/regeo 反代）：毫秒级、中文权威、能精确到门牌号，
+   还带附近道路与 POI。以前的三源竞速（Photon/Nominatim/BigDataCloud）
+   不但慢，还有英文/繁体/国内不可达等一堆坑，这里一并去掉。
+   ⚠️ 高德只认 GCJ-02，浏览器 GPS 是 WGS-84 —— 必须先 amapPos() 转换，
+      否则解析出的地址会偏几百米。
+   高德不可用时退回 Photon（OSM，1–2s）保底；Photon 本身要 WGS-84，不转换。
+   ============================================================ */
+async function geoAmap(la, lo){
+  const r = await fetchT("api/regeo?location=" + amapPos(la, lo)
+            + "&extensions=all&radius=1000&output=json", 8000);
   if (!r.ok) throw new Error("HTTP " + r.status);
-  const a = ((await r.json()) || {}).address || {};
-  const road = a.road || a.pedestrian || a.footway || a.cycleway || a.path || a.highway || "";
-  const no = a.house_number || "";
-  return {
-    admin: admClean([a.state || a.province, a.city || a.town || a.county,
-                     a.city_district || a.district || a.suburb || a.township,
-                     a.quarter || a.neighbourhood]),
-    road: road ? norm(road) + (no ? norm(no) + "号" : "") : "",
-    poi: norm(a.amenity || a.shop || a.building || a.tourism || ""),
-    src: "OpenStreetMap"
-  };
-}
-/* 源 3：BigDataCloud —— 行政区划最全（能到街道），用来补齐省市区 */
-async function geoBdc(la, lo){
-  const u = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${la}&longitude=${lo}&localityLanguage=zh`;
-  const r = await fetchT(u, GEO_HARD);
-  if (!r.ok) throw new Error("HTTP " + r.status);
-  const j = (await r.json()) || {};
-  const li = j.localityInfo || {};
-  const chain = (li.administrative || []).length
-    ? (li.administrative || []).map(x => x.name)
-    : [j.principalSubdivision, j.city, j.locality];
-  /* 只有描述恰为 road / street / highway 的条目才算路名，避免把长文本误判成路 */
-  const inf = li.informative || [];
-  const hit = inf.find(x => /^(road|street|highway|avenue)$/i.test(String(x.description || "").trim()))
-           || inf.find(x => String(x.description || "").trim().length <= 12 && /路$|街$|大道$/.test(String(x.name || "")));
-  return { admin: admClean(chain), road: hit ? norm(hit.name) : "", poi: "", src: "BigDataCloud" };
+  const j = await r.json();
+  if (String(j.status) !== "1") throw new Error(j.info || "高德逆地理失败");
+  const rc = j.regeocode || {}, ac = rc.addressComponent || {}, sn = ac.streetNumber || {};
+  const region = [ac.province, ac.city, ac.district, ac.township].filter(Boolean).join("");
+  let road = "";
+  if (sn.street && sn.number) road = sn.street + sn.number;
+  else if (sn.street) road = sn.street;
+  else if ((rc.roads || []).length) road = (rc.roads[0] || {}).name || "";
+  const pois = rc.pois || [];
+  return {region:region, road:road, poi:pois.length ? String((pois[0] || {}).name || "") : "",
+          src:"高德地图", hasRoad:!!road};
 }
 
-/* 只要拿到路名、或已能拼出「省+市」，就不必再等慢数据源 */
-const geoUsable = v => !!v.road || (v.admin && v.admin.length >= 2);
-/* 结果里有没有中日韩汉字。用来判断"这条是不是本地语结果"——外文名在中文页面上就是残次品 */
-const hasCJK = s => /[\u3400-\u9FFF]/.test(String(s || ""));
+/* Photon 兜底：返回结构是 {admin, road, poi, src}，统一成与高德一致的字段 */
+async function geoOsm(la, lo){
+  const v = await geoPhoton(la, lo);
+  return {region:fixAdmin(v.admin || []).join(""), road:v.road || "",
+          poi:v.poi || "", src:v.src || "OpenStreetMap", hasRoad:!!v.road};
+}
 
-/* 三源并发：行政区划取最全的一条，路名按数据源优先级取第一个命中的。
-   但两条都加了一层「中文优先」：移动端 Photon 有可能整条返回英文，
-   不能让外文名压过 Nominatim（显式 accept-language=zh-CN）和 BigDataCloud（localityLanguage=zh）。 */
 async function revGeo(la, lo){
-  const jobs = [geoPhoton(la, lo), geoNomi(la, lo), geoBdc(la, lo)];   // 数组顺序即优先级
-  const slots = new Array(jobs.length).fill(null);
-  await new Promise(done => {
-    let open = jobs.length, grace = 0, roadWait = 0, finished = false;
-    const finish = () => { if (finished) return; finished = true; clearTimeout(hard); clearTimeout(grace); clearTimeout(roadWait); done(); };
-    const hard = setTimeout(finish, GEO_HARD);
-    jobs.forEach((p, i) => {
-      const settle = () => { if (--open === 0) finish(); };
-      Promise.resolve(p).then(v => {
-        try{
-          if (v){
-            slots[i] = v;
-            /* 只把**中文**路名算作"齐了"。外文路名（Photon 在 en 环境下的返回）不算，
-               于是下面走 roadWait 分支再多等一会儿，给中文源留出落地时间。 */
-            const hasRoad = slots.some(x => x && x.road && hasCJK(x.road));
-            /* 有路名 → 稍等收尾；只有行政区划 → 再多等一会儿路名，别抢跑 */
-            if (hasRoad && !grace) grace = setTimeout(finish, GEO_GRACE);
-            else if (geoUsable(v) && !roadWait) roadWait = setTimeout(finish, ROAD_WAIT);
-          }
-        }catch(e){}
-        settle();
-      }, settle);
-    });
-  });
-  const got = slots.filter(Boolean);
-  if (!got.length) return null;
-  const cjkAdm = got.filter(x => hasCJK(x.admin.join("")));                     // 中文行政区划优先
-  const who = (cjkAdm.length ? cjkAdm : got).slice()
-                .sort((a, b) => b.admin.length - a.admin.length)[0];            // 同级里再比谁更全
-  const rd  = slots.find(x => x && x.road && hasCJK(x.road))                    // 中文路名优先
-           || slots.find(x => x && x.road) || null;                            // 实在没有才退回外文
-  const adm = fixAdmin(who.admin);
-  return {
-    /* 中文直接连写（陕西省西安市经开区）；万一整条都是外文，改用空格隔开，
-       否则会粘成「Shaanxi ProvinceXi'anJingkai」这种读都读不动的东西 */
-    region: hasCJK(adm.join("")) ? adm.join("") : adm.join(" "),
-    road: rd ? rd.road : "",
-    poi: (rd && rd.poi) || (got.find(x => x.poi) || {}).poi || "",
-    src: rd ? rd.src : who.src,
-    hasRoad: !!rd
-  };
+  try{ return await geoAmap(la, lo); }catch(e){}
+  try{ return await geoOsm(la, lo); }catch(e){}
+  return null;
 }
 
 /* 渲染定位结果 */
@@ -314,7 +291,8 @@ function geoHtml(la, lo, g, wOk){
   const region = g ? g.region : "", road = g ? g.road : "", poi = g ? g.poi : "";
   const label = [region, road].filter(Boolean).join(" · ");
   const coord = `${la.toFixed(4)}°N, ${lo.toFixed(4)}°E`;
-  const map = `https://uri.amap.com/marker?position=${lo.toFixed(6)},${la.toFixed(6)}`
+  /* la/lo 是浏览器给的 WGS-84，uri.amap.com 要 GCJ-02，直接拼会偏几百米 */
+  const map = `https://uri.amap.com/marker?position=${amapPos(la, lo)}`
             + (label ? "&name=" + encodeURIComponent(label) : "");
   let sub = wOk ? "已填入实时天气，如有偏差可手动修正。" : "位置已定位，但天气接口不可用，请手动填写参数。";
   if (g && g.src) sub += g.hasRoad ? `（路名来源 ${g.src}）` : `（行政区划来源 ${g.src}）`;

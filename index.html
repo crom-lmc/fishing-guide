@@ -4,7 +4,7 @@
 <meta charset="UTF-8" data-page-node-id="pXoO0XOAk7kn6C2u1EWoRx">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" data-page-node-id="lAXY57fJC3P9LRIlWZg2F7">
 <title>钓鱼指南 · 从入门到上鱼</title>
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=20261015d">
 </head>
 <body data-page-node-id="f08e9Aov6X2ScmybW8mPGX">
 
@@ -420,7 +420,24 @@
       <div class="river-box" id="riverBox">
         <p class="empty">点「查附近水域」，用当前定位列出附近的河流、水库、湖泊与海湾，按远近排序。<br>坐标只在本机计算，不保存也不上传。</p>
       </div>
-      <p class="river-attr">水域数据 © OpenStreetMap 贡献者（ODbL）· 距离为到水域边界最近点的直线距离，出钓前请自行确认该处是否允许垂钓</p>
+      <p class="river-attr" id="riverAttr">水域数据 © 高德地图 · 距离为到该水域的直线距离，出钓前请自行确认该处是否允许垂钓</p>
+    </div>
+
+    <div class="block-hd">
+      <h3 class="block-t">钓点咨询 · 收费钓场 / 野钓点（高德）</h3>
+      <span class="small muted" id="amapCount"></span>
+    </div>
+    <div class="card river-card">
+      <div class="river-tools">
+        <div class="map-actions">
+          <button type="button" class="btn sm" id="amapLoad">🔍 找附近钓点</button>
+          <label class="chk"><input type="checkbox" id="amapToggle" checked> 在地图显示</label>
+        </div>
+      </div>
+      <div class="river-box" id="amapBox">
+        <p class="empty">点「找附近钓点」，用你的定位或地图中心，列出附近的收费钓场、野钓点、水库钓位，并标注今天的适钓指数与推荐度。<br>搜索范围复用上方「附近水域」的半径。数据来自高德地图开放平台 POI。</p>
+      </div>
+      <p class="river-attr">数据 © 高德地图 · 坐标为 GCJ-02，与地图底图一致；请自行确认该处是否对公众开放垂钓。</p>
     </div>
   </section>
 
@@ -530,14 +547,14 @@
   <div class="lb-cap" id="lbCap"></div>
 </div>
 
-<script src="js/data.js"></script>
-<script src="js/core.js"></script>
-<script src="js/score.js"></script>
-<script src="js/content.js"></script>
-<script src="js/log.js"></script>
-<script src="js/search.js"></script>
-<script src="js/map.js"></script>
-<script src="js/share.js"></script>
-<script src="js/init.js"></script>
+<script src="js/data.js?v=20261015d"></script>
+<script src="js/core.js?v=20261015d"></script>
+<script src="js/score.js?v=20261015d"></script>
+<script src="js/content.js?v=20261015d"></script>
+<script src="js/log.js?v=20261015d"></script>
+<script src="js/search.js?v=20261015d"></script>
+<script src="js/map.js?v=20261015d"></script>
+<script src="js/share.js?v=20261015d"></script>
+<script src="js/init.js?v=20261015d"></script>
 </body>
 </html>
